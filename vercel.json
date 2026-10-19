@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/quotes.py": {
+      "maxDuration": 60
+    },
+    "api/range.py": {
+      "maxDuration": 30
+    }
+  }
+}

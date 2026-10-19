@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>S&amp;P 500 Movers</title>
+  <style>
+    :root {
+      --ink: #1a1c19;
+      --muted: #5e5b54;
+      --paper: #f6f4ee;
+      --page: #d8d5cb;
+      --line: #c9c4b6;
+      --line-strong: #8e8a7e;
+      --header: #1e2a36;
+      --header-text: #f3f0e8;
+      --down: #7a2424;
+      --up: #1a5c38;
+      --alt: #f0eee6;
+      --hover: #e3ebf3;
+      --status: #ebe8df;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+    }
+
+    body {
+      background: var(--page);
+      color: var(--ink);
+      font: 13px/1.35 "Segoe UI", Tahoma, sans-serif;
+    }
+
+    .app {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      flex: 0 0 auto;
+      background: var(--header);
+      color: var(--header-text);
+      padding: 14px 22px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    header p {
+      margin: 4px 0 0;
+      color: #c5c0b4;
+      font-size: 12px;
+    }
+
+    .index-tag {
+      font: 12px/1.4 Consolas, "Courier New", monospace;
+      color: #d9d3c5;
+      text-align: right;
+    }
+
+    .controls {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 22px;
+      background: var(--status);
+      border-bottom: 1px solid var(--line);
+    }
+
+    button {
+      min-width: 84px;
+      height: 32px;
+      border: 1px solid #2a3642;
+      background: #f7f5ef;
+      color: var(--ink);
+      font: 600 12px/1 "Segoe UI", Tahoma, sans-serif;
+      letter-spacing: 0.14em;
+      cursor: pointer;
+    }
+
+    button:hover { background: #fff; }
+
+    button:focus-visible {
+      outline: 2px solid var(--header);
+      outline-offset: 2px;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    button[aria-pressed="true"] {
+      background: var(--header);
+      color: var(--header-text);
+    }
+
+    .hint {
+      margin-right: 16px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .query {
+      margin-left: auto;
+      max-width: min(560px, 48vw);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      background: #fbfaf6;
+      color: #2c3340;
+      font: 12px/1.4 Consolas, "Courier New", monospace;
+    }
+
+    .sheet {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      background: var(--paper);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font: 12.5px/1.25 Consolas, "Courier New", monospace;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--line-strong);
+      background: #e6e3d8;
+      color: #3a3d38;
+      font: 600 11px/1 "Segoe UI", Tahoma, sans-serif;
+      letter-spacing: 0.06em;
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    td {
+      padding: 3px 12px;
+      border-bottom: 1px solid #e4e0d5;
+      white-space: nowrap;
+    }
+
+    th.num, td.num { text-align: right; }
+
+    td.rownum, th.rownum {
+      width: 48px;
+      color: #8a867c;
+      text-align: right;
+    }
+
+    td.sym {
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    td.name {
+      font-family: "Segoe UI", Tahoma, sans-serif;
+    }
+
+    tbody tr.ticker { cursor: pointer; }
+    tbody tr.ticker:nth-child(even) { background: var(--alt); }
+    tbody tr.ticker:hover,
+    tbody tr.ticker.open { background: var(--hover); }
+
+    tr.detail td {
+      padding: 0;
+      border-bottom: 1px solid #e4e0d5;
+      background: #f3f1ea;
+      white-space: normal;
+    }
+
+    .fold {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows 180ms ease;
+    }
+
+    .fold.open { grid-template-rows: 1fr; }
+
+    .fold-inner { overflow: hidden; }
+
+    .fold-body {
+      padding: 8px 16px 10px 60px;
+      color: var(--ink);
+      font: 12px/1.45 "Segoe UI", Tahoma, sans-serif;
+    }
+
+    .fold-stats {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      margin: 0;
+    }
+
+    .fold-stats b {
+      font-family: Consolas, "Courier New", monospace;
+      font-weight: 700;
+    }
+
+    .fold-avg {
+      color: var(--muted);
+      margin-left: 12px;
+    }
+
+    .source-toggle {
+      display: inline-flex;
+      margin-left: 12px;
+    }
+
+    .source-toggle button {
+      min-width: 72px;
+    }
+
+    .source-toggle button + button {
+      margin-left: -1px;
+    }
+
+    td.down { color: var(--down); font-weight: 700; }
+    td.up { color: var(--up); font-weight: 700; }
+
+    .empty {
+      padding: 56px 22px;
+      color: var(--muted);
+    }
+
+    footer {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 7px 22px;
+      border-top: 1px solid var(--line);
+      background: var(--status);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 760px) {
+      header { flex-direction: column; align-items: flex-start; }
+      .index-tag { text-align: left; }
+      .query { display: none; }
+      .controls { flex-wrap: wrap; }
+      .hint { margin-right: 8px; }
+      .source-toggle { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1>S&amp;P 500 Movers</h1>
+        <p>Session change for current index members.</p>
+      </div>
+      <div class="index-tag">TABLE &nbsp;sp500<br>FIELD &nbsp;change_pct</div>
+    </header>
+
+    <div class="controls">
+      <button type="button" id="btn-down" onclick="down()">DOWN</button>
+      <span class="hint">at least 3% lower</span>
+      <button type="button" id="btn-up" onclick="up()">UP</button>
+      <span class="hint">at least 3% higher</span>
+      <div class="source-toggle" role="group" aria-label="Quote source">
+        <button type="button" id="src-ibkr" onclick="setSource('ibkr')">IBKR</button>
+        <button type="button" id="src-yahoo" onclick="setSource('yahoo')" aria-pressed="true">YAHOO</button>
+      </div>
+      <div class="query" id="query">select * from sp500</div>
+    </div>
+
+    <div class="sheet" id="sheet">
+      <div class="empty" id="empty">No result set. Run DOWN or UP.</div>
+    </div>
+
+    <footer>
+      <span id="status">Ready.</span>
+      <span id="meta">Yahoo Finance. Run DOWN or UP.</span>
+    </footer>
+  </div>
+
+  <script>
+    const THRESHOLD = 3;
+    const CACHE_MS = 60000;
+
+    let book = null;
+    let view = null;
+    let busy = false;
+    let refreshPromise = null;
+    let source = "yahoo";
+
+    function esc(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function formatPrice(value) {
+      return Number(value).toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    }
+
+    function formatPercent(value) {
+      const sign = value > 0 ? "+" : "";
+      return sign + Number(value).toFixed(2) + "%";
+    }
+
+    function formatAsOf(iso) {
+      if (!iso) return "latest session";
+      const when = new Date(iso);
+      return when.toLocaleString("en-US", {
+        timeZone: "America/New_York",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      });
+    }
+
+    function setBusy(isBusy) {
+      busy = isBusy;
+      document.getElementById("btn-down").disabled = isBusy;
+      document.getElementById("btn-up").disabled = isBusy;
+    }
+
+    function setPressed(which) {
+      document.getElementById("btn-down").setAttribute("aria-pressed", which === "down");
+      document.getElementById("btn-up").setAttribute("aria-pressed", which === "up");
+    }
+
+    function bookStamp(data) {
+      if (!data) return 0;
+      if (data.cachedAt) return data.cachedAt * 1000;
+      return data.fetchedAt || 0;
+    }
+
+    function bookReady(data) {
+      return !!(
+        data &&
+        data.quotes &&
+        data.complete !== false &&
+        data.source === (source === "yahoo" ? "Yahoo" : "IBKR") &&
+        Date.now() - bookStamp(data) < CACHE_MS
+      );
+    }
+
+    function setSource(next) {
+      if (next !== "ibkr" && next !== "yahoo") return;
+      if (source === next) return;
+      source = next;
+      book = null;
+      refreshPromise = null;
+      openSymbol = null;
+      Object.keys(rangeCache).forEach(function (key) { delete rangeCache[key]; });
+      Object.keys(rangeWait).forEach(function (key) { delete rangeWait[key]; });
+      document.getElementById("src-ibkr").setAttribute("aria-pressed", next === "ibkr");
+      document.getElementById("src-yahoo").setAttribute("aria-pressed", next === "yahoo");
+      document.getElementById("meta").textContent = next === "yahoo"
+        ? "Yahoo Finance. Run DOWN or UP."
+        : "IBKR. Run DOWN or UP.";
+      if (view === "down") down();
+      else if (view === "up") up();
+    }
+
+    async function fetchBook(fresh) {
+      const params = new URLSearchParams();
+      params.set("source", source);
+      if (fresh) params.set("fresh", "1");
+      const response = await fetch("/api/quotes?" + params.toString());
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Quote service unavailable.");
+      }
+      data.fetchedAt = bookStamp(data) || Date.now();
+      book = data;
+      return data;
+    }
+
+    function rowsFor(side, data) {
+      if (side === "down") {
+        return data.quotes
+          .filter(function (row) { return row.changePercent <= -THRESHOLD; })
+          .sort(function (a, b) {
+            return a.changePercent - b.changePercent || a.symbol.localeCompare(b.symbol);
+          });
+      }
+      return data.quotes
+        .filter(function (row) { return row.changePercent >= THRESHOLD; })
+        .sort(function (a, b) {
+          return b.changePercent - a.changePercent || a.symbol.localeCompare(b.symbol);
+        });
+    }
+
+    function paint(side) {
+      if (!book || !book.quotes || !side) return false;
+      const rows = rowsFor(side, book);
+      if (rows.length === 0 && book.complete === false) return false;
+      render(rows, book, side);
+      return true;
+    }
+
+    function refreshBook() {
+      if (!refreshPromise) {
+        refreshPromise = fetchBook(true).finally(function () {
+          refreshPromise = null;
+        });
+      }
+      refreshPromise.then(function () {
+        paint(view);
+      }).catch(function (error) {
+        if (!paint(view)) fail(error);
+      });
+    }
+
+    const rangeCache = {};
+    const rangeWait = {};
+    let openSymbol = null;
+
+    function tickerRow(symbol) {
+      const rows = document.querySelectorAll("#sheet tr.ticker");
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].dataset.symbol === symbol) return rows[i];
+      }
+      return null;
+    }
+
+    function detailFor(symbol) {
+      const row = tickerRow(symbol);
+      if (!row) return null;
+      const next = row.nextElementSibling;
+      if (!next || !next.classList.contains("detail") || next.dataset.symbol !== symbol) return null;
+      return next;
+    }
+
+    function formatRangePanel(data) {
+      const lines = (data.periods || []).map(function (item) {
+        if (item.error) {
+          return "<span>" + esc(item.period) + " " + esc(item.error) + "</span>";
+        }
+        return (
+          "<span>" + esc(item.period) +
+          " standard deviation <b>" + formatPrice(item.standardDeviation) + "</b>" +
+          '<span class="fold-avg">average ' + formatPrice(item.averageRange) + "</span></span>"
+        );
+      }).join("");
+      return '<div class="fold-stats">' + lines + "</div>";
+    }
+
+    function closeDetail(detail) {
+      if (!detail || !detail.isConnected) return;
+      if (detail.dataset.symbol === openSymbol) openSymbol = null;
+      const fold = detail.querySelector(".fold");
+      const ticker = detail.previousElementSibling;
+      if (ticker) ticker.classList.remove("open");
+      if (!fold) {
+        detail.remove();
+        return;
+      }
+      fold.classList.remove("open");
+      const remove = function () {
+        if (detail.isConnected) detail.remove();
+      };
+      fold.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 220);
+    }
+
+    function closeOpenDetail() {
+      const open = document.querySelector("#sheet tr.detail");
+      if (open) closeDetail(open);
+    }
+
+    function showRange(symbol, data) {
+      const detail = detailFor(symbol);
+      if (!detail) return;
+      const body = detail.querySelector(".fold-body");
+      if (body) body.innerHTML = formatRangePanel(data);
+    }
+
+    function showRangeError(symbol, message) {
+      const detail = detailFor(symbol);
+      if (!detail) return;
+      const body = detail.querySelector(".fold-body");
+      if (body) body.textContent = message || "Range request failed.";
+    }
+
+    function rangeKey(symbol) {
+      return source + ":" + symbol;
+    }
+
+    async function loadRange(symbol) {
+      const asked = source;
+      const key = rangeKey(symbol);
+      try {
+        let data = rangeCache[key];
+        if (!data) {
+          if (!rangeWait[key]) {
+            rangeWait[key] = fetch("/api/range?source=" + encodeURIComponent(asked) + "&symbol=" + encodeURIComponent(symbol))
+              .then(function (response) {
+                return response.json().then(function (payload) {
+                  if (!response.ok || payload.error) {
+                    throw new Error(payload.error || "Range request failed.");
+                  }
+                  return payload;
+                });
+              })
+              .finally(function () {
+                delete rangeWait[key];
+              });
+          }
+          data = await rangeWait[key];
+          rangeCache[key] = data;
+        }
+        if (openSymbol === symbol && source === asked) showRange(symbol, data);
+      } catch (error) {
+        if (openSymbol === symbol && source === asked) showRangeError(symbol, error.message);
+      }
+    }
+
+    function openDetail(row, symbol) {
+      openSymbol = symbol;
+      const detail = document.createElement("tr");
+      detail.className = "detail";
+      detail.dataset.symbol = symbol;
+      const cached = rangeCache[rangeKey(symbol)];
+      detail.innerHTML =
+        '<td colspan="5"><div class="fold"><div class="fold-inner"><div class="fold-body">' +
+        (cached ? "" : "Reading the 7-day, 1-month, and 3-month ranges…") +
+        "</div></div></div></td>";
+      row.classList.add("open");
+      row.after(detail);
+      if (cached) showRange(symbol, cached);
+      requestAnimationFrame(function () {
+        const fold = detail.querySelector(".fold");
+        if (fold) fold.classList.add("open");
+      });
+      if (!cached) loadRange(symbol);
+    }
+
+    function toggleRange(row) {
+      const symbol = row.dataset.symbol;
+      const next = row.nextElementSibling;
+      if (next && next.classList.contains("detail") && next.dataset.symbol === symbol) {
+        closeDetail(next);
+        return;
+      }
+      closeOpenDetail();
+      openDetail(row, symbol);
+    }
+
+    document.getElementById("sheet").addEventListener("click", function (event) {
+      const row = event.target.closest("tr.ticker");
+      if (!row) return;
+      toggleRange(row);
+    });
+
+    function render(rows, data, side) {
+      const sheet = document.getElementById("sheet");
+      const direction = side === "down" ? "down" : "up";
+      const label = side === "down" ? "down 3% or more" : "up 3% or more";
+
+      if (rows.length === 0) {
+        sheet.innerHTML = '<div class="empty">0 rows. No S&amp;P 500 name is ' + label + ".</div>";
+      } else {
+        const body = rows.map(function (row, index) {
+          return (
+            '<tr class="ticker" data-symbol="' + esc(row.symbol) + '">' +
+              '<td class="rownum">' + (index + 1) + "</td>" +
+              '<td class="sym">' + esc(row.symbol) + "</td>" +
+              '<td class="name">' + esc(row.name) + "</td>" +
+              '<td class="num">' + formatPrice(row.price) + "</td>" +
+              '<td class="num ' + direction + '">' + formatPercent(row.changePercent) + "</td>" +
+            "</tr>"
+          );
+        }).join("");
+
+        sheet.innerHTML =
+          "<table>" +
+            "<thead><tr>" +
+              '<th class="rownum">#</th>' +
+              "<th>Symbol</th>" +
+              "<th>Security</th>" +
+              '<th class="num">Last</th>' +
+              '<th class="num">Change</th>' +
+            "</tr></thead>" +
+            "<tbody>" + body + "</tbody>" +
+          "</table>";
+      }
+
+      const noun = rows.length === 1 ? "row" : "rows";
+      const feed = data.source === "Yahoo"
+        ? "Yahoo"
+        : (data.marketData === "live" ? "IBKR live" : "IBKR delayed");
+      document.getElementById("status").textContent =
+        rows.length + " " + noun + " · names " + label + ".";
+      document.getElementById("meta").textContent =
+        feed + " · as of " + formatAsOf(data.asOf) + " · " +
+        data.quoted + " of " + data.universe + " quoted. Click a ticker for the range.";
+      if (openSymbol) {
+        const row = tickerRow(openSymbol);
+        if (row) openDetail(row, openSymbol);
+      }
+    }
+
+    function fail(error) {
+      document.getElementById("sheet").innerHTML =
+        '<div class="empty">' + esc(error.message || "Query failed.") + "</div>";
+      document.getElementById("status").textContent = "Query failed.";
+    }
+
+    async function down() {
+      view = "down";
+      setPressed("down");
+      document.getElementById("query").textContent =
+        "select * from sp500 where change_pct <= -3 order by change_pct asc";
+      if (paint("down")) {
+        if (!bookReady(book)) refreshBook();
+        return;
+      }
+      if (busy) return;
+      setBusy(true);
+      document.getElementById("status").textContent = "Reading IBKR quotes for names down 3% or more…";
+      try {
+        await fetchBook(false);
+        paint(view);
+        if (book && !bookReady(book)) refreshBook();
+      } catch (error) {
+        if (!paint(view)) fail(error);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function up() {
+      view = "up";
+      setPressed("up");
+      document.getElementById("query").textContent =
+        "select * from sp500 where change_pct >= 3 order by change_pct desc";
+      if (paint("up")) {
+        if (!bookReady(book)) refreshBook();
+        return;
+      }
+      if (busy) return;
+      setBusy(true);
+      document.getElementById("status").textContent = "Reading IBKR quotes for names up 3% or more…";
+      try {
+        await fetchBook(false);
+        paint(view);
+        if (book && !bookReady(book)) refreshBook();
+      } catch (error) {
+        if (!paint(view)) fail(error);
+      } finally {
+        setBusy(false);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,258 @@
+down() from index.html
+
+    async function down() {
+      view = "down";
+      setPressed("down");
+      document.getElementById("query").textContent =
+        "select * from sp500 where change_pct <= -3 order by change_pct asc";
+      if (paint("down")) {
+        if (!bookReady(book)) refreshBook();
+        return;
+      }
+      if (busy) return;
+      setBusy(true);
+      document.getElementById("status").textContent = "Reading IBKR quotes for names down 3% or more…";
+      try {
+        await fetchBook(false);
+        paint(view);
+        if (book && !bookReady(book)) refreshBook();
+      } catch (error) {
+        if (!paint(view)) fail(error);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+up() from index.html
+
+    async function up() {
+      view = "up";
+      setPressed("up");
+      document.getElementById("query").textContent =
+        "select * from sp500 where change_pct >= 3 order by change_pct desc";
+      if (paint("up")) {
+        if (!bookReady(book)) refreshBook();
+        return;
+      }
+      if (busy) return;
+      setBusy(true);
+      document.getElementById("status").textContent = "Reading IBKR quotes for names up 3% or more…";
+      try {
+        await fetchBook(false);
+        paint(view);
+        if (book && !bookReady(book)) refreshBook();
+      } catch (error) {
+        if (!paint(view)) fail(error);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+Helpers used by down() and up()
+
+    const THRESHOLD = 3;
+    const CACHE_MS = 60000;
+
+    let book = null;
+    let view = null;
+    let busy = false;
+    let refreshPromise = null;
+
+    function esc(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function formatPrice(value) {
+      return Number(value).toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    }
+
+    function formatPercent(value) {
+      const sign = value > 0 ? "+" : "";
+      return sign + Number(value).toFixed(2) + "%";
+    }
+
+    function formatAsOf(iso) {
+      if (!iso) return "latest session";
+      const when = new Date(iso);
+      return when.toLocaleString("en-US", {
+        timeZone: "America/New_York",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      });
+    }
+
+    function setBusy(isBusy) {
+      busy = isBusy;
+      document.getElementById("btn-down").disabled = isBusy;
+      document.getElementById("btn-up").disabled = isBusy;
+    }
+
+    function setPressed(which) {
+      document.getElementById("btn-down").setAttribute("aria-pressed", which === "down");
+      document.getElementById("btn-up").setAttribute("aria-pressed", which === "up");
+    }
+
+    function bookStamp(data) {
+      if (!data) return 0;
+      if (data.cachedAt) return data.cachedAt * 1000;
+      return data.fetchedAt || 0;
+    }
+
+    function bookReady(data) {
+      return !!(
+        data &&
+        data.quotes &&
+        data.complete !== false &&
+        Date.now() - bookStamp(data) < CACHE_MS
+      );
+    }
+
+    async function fetchBook(fresh) {
+      const response = await fetch(fresh ? "/api/quotes?fresh=1" : "/api/quotes");
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Quote service unavailable.");
+      }
+      data.fetchedAt = bookStamp(data) || Date.now();
+      book = data;
+      return data;
+    }
+
+    function rowsFor(side, data) {
+      if (side === "down") {
+        return data.quotes
+          .filter(function (row) { return row.changePercent <= -THRESHOLD; })
+          .sort(function (a, b) {
+            return a.changePercent - b.changePercent || a.symbol.localeCompare(b.symbol);
+          });
+      }
+      return data.quotes
+        .filter(function (row) { return row.changePercent >= THRESHOLD; })
+        .sort(function (a, b) {
+          return b.changePercent - a.changePercent || a.symbol.localeCompare(b.symbol);
+        });
+    }
+
+    function paint(side) {
+      if (!book || !book.quotes || !side) return false;
+      const rows = rowsFor(side, book);
+      if (rows.length === 0 && book.complete === false) return false;
+      render(rows, book, side);
+      return true;
+    }
+
+    function refreshBook() {
+      if (!refreshPromise) {
+        refreshPromise = fetchBook(true).finally(function () {
+          refreshPromise = null;
+        });
+      }
+      refreshPromise.then(function () {
+        paint(view);
+      }).catch(function (error) {
+        if (!paint(view)) fail(error);
+      });
+    }
+
+    function render(rows, data, side) {
+      const sheet = document.getElementById("sheet");
+      const direction = side === "down" ? "down" : "up";
+      const label = side === "down" ? "down 3% or more" : "up 3% or more";
+
+      if (rows.length === 0) {
+        sheet.innerHTML = '<div class="empty">0 rows. No S&amp;P 500 name is ' + label + ".</div>";
+      } else {
+        const body = rows.map(function (row, index) {
+          return (
+            "<tr>" +
+              '<td class="rownum">' + (index + 1) + "</td>" +
+              '<td class="sym">' + esc(row.symbol) + "</td>" +
+              '<td class="name">' + esc(row.name) + "</td>" +
+              '<td class="num">' + formatPrice(row.price) + "</td>" +
+              '<td class="num ' + direction + '">' + formatPercent(row.changePercent) + "</td>" +
+            "</tr>"
+          );
+        }).join("");
+
+        sheet.innerHTML =
+          "<table>" +
+            "<thead><tr>" +
+              '<th class="rownum">#</th>' +
+              "<th>Symbol</th>" +
+              "<th>Security</th>" +
+              '<th class="num">Last</th>' +
+              '<th class="num">Change</th>' +
+            "</tr></thead>" +
+            "<tbody>" + body + "</tbody>" +
+          "</table>";
+      }
+
+      const noun = rows.length === 1 ? "row" : "rows";
+      const feed = data.marketData === "live" ? "IBKR live" : "IBKR delayed";
+      document.getElementById("status").textContent =
+        rows.length + " " + noun + " · names " + label + ".";
+      document.getElementById("meta").textContent =
+        feed + " · as of " + formatAsOf(data.asOf) + " · " +
+        data.quoted + " of " + data.universe + " quoted.";
+    }
+
+    function fail(error) {
+      document.getElementById("sheet").innerHTML =
+        '<div class="empty">' + esc(error.message || "Query failed.") + "</div>";
+      document.getElementById("status").textContent = "Query failed.";
+    }
+
+connectToIBKR() from ibkr.py
+
+def connectToIBKR(
+    host: str = "127.0.0.1",
+    port: int = 4001,
+    client_id: int = 1,
+    readonly: bool = False,
+    timeout: float = 10,
+):
+    """Open a TWS/Gateway session and return it.
+
+    Defaults match this workstation: socket port 4001, read-only API off.
+    Call disconnect() on the returned session when the app is finished.
+    Each app that stays connected needs its own client_id.
+    """
+    try:
+        from ib_async import IB
+    except ImportError:
+        from ib_insync import IB
+
+    ib = IB()
+    try:
+        ib.connect(
+            host,
+            port,
+            clientId=client_id,
+            readonly=readonly,
+            timeout=timeout,
+        )
+    except Exception as exc:
+        if ib.isConnected():
+            ib.disconnect()
+        raise ConnectionError(
+            f"Could not connect to IBKR at {host}:{port} with client id {client_id}. "
+            "Start Trader Workstation or IB Gateway, enable socket clients, "
+            "and use a client id that no other app is using."
+        ) from exc
+
+    if not ib.isConnected():
+        raise ConnectionError(
+            f"IBKR at {host}:{port} did not stay connected (client id {client_id})."
+        )
+    return ib
