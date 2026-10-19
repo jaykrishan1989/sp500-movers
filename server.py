@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from ibkr import connectToIBKR
-from yahoo_finance import getDataFromYahooFinance, yahoo_book
+from yahoo_finance import RANGE_PERIODS, getDataFromYahooFinance, return_deviations, yahoo_book
 
 try:
     from ib_async import Contract, Stock
@@ -123,31 +123,15 @@ def _bar_day(value) -> str:
     return str(value)[:10]
 
 
-# Trading sessions, not calendar days. One month is about 21 sessions.
-RANGE_PERIODS = {
-    "7 day": 7,
-    "1 month": 21,
-    "3 month": 63,
-}
-
-
-def _range_deviation(ranges: list[float]) -> tuple[float, float]:
-    count = len(ranges)
-    average = sum(ranges) / count
-    variance = sum((value - average) ** 2 for value in ranges) / count
-    return average, variance ** 0.5
-
-
 def calculateSD(
     ib,
     symbol: str,
     periods: tuple[str, ...] = ("7 day", "1 month", "3 month"),
 ) -> dict:
-    """Standard deviation of daily high-low ranges for each requested period.
+    """Sample standard deviation of daily simple returns for each period.
 
-    One history request covers every period. Each window is its full set of
-    trading days, so the deviation divides by n. The average range is included
-    so the deviation has a scale.
+    One history request covers every period. Each window is the last N
+    close-to-close returns, and the deviation divides by N - 1.
     """
     symbol = symbol.strip().upper()
     unknown = [name for name in periods if name not in RANGE_PERIODS]
@@ -180,52 +164,11 @@ def calculateSD(
         formatDate=1,
         timeout=30,
     )
-    observed = []
-    session_open = None
-    last_price = None
-    for bar in bars or []:
-        high = price(bar.high)
-        low = price(bar.low)
-        opened = price(bar.open)
-        closed = price(bar.close)
-        if opened is not None:
-            session_open = opened
-        if closed is not None:
-            last_price = closed
-        if high is None or low is None or high < low:
-            continue
-        observed.append(high - low)
-
-    results = []
-    for name in periods:
-        count = RANGE_PERIODS[name]
-        window = observed[-count:]
-        if len(window) < count:
-            results.append(
-                {
-                    "period": name,
-                    "days": len(window),
-                    "error": f"Need {count} trading days, got {len(window)}.",
-                }
-            )
-            continue
-        average, deviation = _range_deviation(window)
-        results.append(
-            {
-                "period": name,
-                "days": count,
-                "averageRange": average,
-                "standardDeviation": deviation,
-            }
-        )
+    closes = [price(bar.close) for bar in bars or []]
+    results = return_deviations(closes, periods)
     if not any("standardDeviation" in item for item in results):
-        raise RuntimeError(f"IBKR returned {len(observed)} daily bars for {symbol}.")
-    return {
-        "symbol": symbol,
-        "open": session_open,
-        "last": last_price,
-        "periods": results,
-    }
+        raise RuntimeError(f"IBKR returned {len(closes)} daily bars for {symbol}.")
+    return {"symbol": symbol, "periods": results}
 
 
 def choose_market_data(ib) -> int:

@@ -1,9 +1,10 @@
-"""Yahoo Finance quotes and range windows. Stdlib only, safe to run on Vercel."""
+"""Yahoo Finance quotes and return standard deviations. Stdlib only, safe to run on Vercel."""
 
 from __future__ import annotations
 
 import csv
 import json
+import statistics
 import threading
 import time
 import urllib.parse
@@ -18,6 +19,7 @@ CONSTITUENTS = ROOT / "data" / "constituents.csv"
 USER_AGENT = "Mozilla/5.0"
 EASTERN = ZoneInfo("America/New_York")
 CACHE_SECONDS = 60
+# Trading sessions, not calendar days. One month is about 21 sessions.
 RANGE_PERIODS = {
     "7 day": 7,
     "1 month": 21,
@@ -38,11 +40,51 @@ def price(value) -> float | None:
     return number
 
 
-def _range_deviation(ranges: list[float]) -> tuple[float, float]:
-    count = len(ranges)
-    average = sum(ranges) / count
-    variance = sum((value - average) ** 2 for value in ranges) / count
-    return average, variance ** 0.5
+def _simple_returns(closes: list[float | None]) -> list[float]:
+    """Close-to-close simple returns. A missing close breaks the chain."""
+    returns = []
+    previous = None
+    for close in closes:
+        if close is None:
+            previous = None
+            continue
+        if previous is not None:
+            returns.append((close - previous) / previous)
+        previous = close
+    return returns
+
+
+def return_deviations(closes: list[float | None], periods: tuple[str, ...]) -> list[dict]:
+    """Sample standard deviation of simple returns for each named period.
+
+    A period of N trading days is the last N close-to-close returns. The
+    deviation is the sample standard deviation, so it divides by N - 1.
+    """
+    unknown = [name for name in periods if name not in RANGE_PERIODS]
+    if unknown:
+        raise ValueError("Unknown period: " + ", ".join(unknown))
+    returns = _simple_returns(closes)
+    results = []
+    for name in periods:
+        count = RANGE_PERIODS[name]
+        window = returns[-count:]
+        if len(window) < count:
+            results.append(
+                {
+                    "period": name,
+                    "days": len(window),
+                    "error": f"Need {count} daily returns, got {len(window)}.",
+                }
+            )
+            continue
+        results.append(
+            {
+                "period": name,
+                "days": count,
+                "standardDeviation": statistics.stdev(window),
+            }
+        )
+    return results
 
 
 def load_constituents() -> list[dict]:
@@ -54,32 +96,6 @@ def _yahoo_get(url: str) -> dict:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=20) as response:
         return json.loads(response.read().decode("utf-8"))
-
-
-def _yahoo_windows(ranges: list[float], periods: tuple[str, ...]) -> list[dict]:
-    results = []
-    for name in periods:
-        count = RANGE_PERIODS[name]
-        window = ranges[-count:]
-        if len(window) < count:
-            results.append(
-                {
-                    "period": name,
-                    "days": len(window),
-                    "error": f"Need {count} trading days, got {len(window)}.",
-                }
-            )
-            continue
-        average, deviation = _range_deviation(window)
-        results.append(
-            {
-                "period": name,
-                "days": count,
-                "averageRange": average,
-                "standardDeviation": deviation,
-            }
-        )
-    return results
 
 
 def _yahoo_quote_batch(symbols: list[str]) -> list[dict]:
@@ -114,34 +130,12 @@ def _yahoo_ranges(symbol: str, periods: tuple[str, ...]) -> dict:
     if not result:
         raise RuntimeError(f"No Yahoo history for {symbol}")
     quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
-    highs = quote.get("high") or []
-    lows = quote.get("low") or []
-    opens = quote.get("open") or []
-    closes = quote.get("close") or []
-    count = max(len(highs), len(lows), len(opens), len(closes))
-    ranges = []
-    session_open = None
-    last_close = None
-    for index in range(count):
-        high_price = price(highs[index] if index < len(highs) else None)
-        low_price = price(lows[index] if index < len(lows) else None)
-        opened = price(opens[index] if index < len(opens) else None)
-        closed = price(closes[index] if index < len(closes) else None)
-        if opened is not None:
-            session_open = opened
-        if closed is not None:
-            last_close = closed
-        if high_price is None or low_price is None or high_price < low_price:
-            continue
-        ranges.append(high_price - low_price)
-    windows = _yahoo_windows(ranges, periods)
+    closes = [price(value) for value in (quote.get("close") or [])]
+    windows = return_deviations(closes, periods)
     if not any("standardDeviation" in item for item in windows):
-        raise RuntimeError(f"Yahoo returned {len(ranges)} daily bars for {symbol}.")
-    last_price = price((result.get("meta") or {}).get("regularMarketPrice")) or last_close
+        raise RuntimeError(f"Yahoo returned {len(closes)} daily bars for {symbol}.")
     return {
         "symbol": symbol,
-        "open": session_open,
-        "last": last_price,
         "periods": windows,
         "source": "Yahoo",
     }
@@ -202,10 +196,10 @@ def getDataFromYahooFinance(
     symbol: str | None = None,
     periods: tuple[str, ...] = ("7 day", "1 month", "3 month"),
 ) -> dict:
-    """Same mover book, or one stock's range windows, from Yahoo Finance.
+    """Same mover book, or one stock's return standard deviations, from Yahoo Finance.
 
     Call it with no symbol for the S&P 500 quote book. Pass a symbol for that
-    name's 7-day, 1-month, and 3-month range standard deviations.
+    name's 7-day, 1-month, and 3-month sample standard deviations of returns.
     """
     unknown = [name for name in periods if name not in RANGE_PERIODS]
     if unknown:
