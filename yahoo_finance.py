@@ -116,17 +116,35 @@ def _yahoo_ranges(symbol: str, periods: tuple[str, ...]) -> dict:
     quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
     highs = quote.get("high") or []
     lows = quote.get("low") or []
+    opens = quote.get("open") or []
+    closes = quote.get("close") or []
+    count = max(len(highs), len(lows), len(opens), len(closes))
     ranges = []
-    for high, low in zip(highs, lows):
-        high_price = price(high)
-        low_price = price(low)
+    session_open = None
+    last_close = None
+    for index in range(count):
+        high_price = price(highs[index] if index < len(highs) else None)
+        low_price = price(lows[index] if index < len(lows) else None)
+        opened = price(opens[index] if index < len(opens) else None)
+        closed = price(closes[index] if index < len(closes) else None)
+        if opened is not None:
+            session_open = opened
+        if closed is not None:
+            last_close = closed
         if high_price is None or low_price is None or high_price < low_price:
             continue
         ranges.append(high_price - low_price)
     windows = _yahoo_windows(ranges, periods)
     if not any("standardDeviation" in item for item in windows):
         raise RuntimeError(f"Yahoo returned {len(ranges)} daily bars for {symbol}.")
-    return {"symbol": symbol, "periods": windows, "source": "Yahoo"}
+    last_price = price((result.get("meta") or {}).get("regularMarketPrice")) or last_close
+    return {
+        "symbol": symbol,
+        "open": session_open,
+        "last": last_price,
+        "periods": windows,
+        "source": "Yahoo",
+    }
 
 
 def _yahoo_book() -> dict:

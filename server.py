@@ -181,9 +181,17 @@ def calculateSD(
         timeout=30,
     )
     observed = []
+    session_open = None
+    last_price = None
     for bar in bars or []:
         high = price(bar.high)
         low = price(bar.low)
+        opened = price(bar.open)
+        closed = price(bar.close)
+        if opened is not None:
+            session_open = opened
+        if closed is not None:
+            last_price = closed
         if high is None or low is None or high < low:
             continue
         observed.append(high - low)
@@ -212,7 +220,12 @@ def calculateSD(
         )
     if not any("standardDeviation" in item for item in results):
         raise RuntimeError(f"IBKR returned {len(observed)} daily bars for {symbol}.")
-    return {"symbol": symbol, "periods": results}
+    return {
+        "symbol": symbol,
+        "open": session_open,
+        "last": last_price,
+        "periods": results,
+    }
 
 
 def choose_market_data(ib) -> int:
