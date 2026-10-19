@@ -218,87 +218,6 @@
       font-weight: 700;
     }
 
-    .fold-avg {
-      color: var(--muted);
-      margin-left: 12px;
-    }
-
-    .range-line { margin: 0 0 12px; }
-
-    .range-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      color: var(--muted);
-      font-size: 11px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-
-    .track {
-      position: relative;
-      height: 22px;
-      margin-top: 4px;
-    }
-
-    .track-bar {
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 10px;
-      height: 2px;
-      background: #c9c4b6;
-    }
-
-    .band {
-      position: absolute;
-      top: 6px;
-      height: 10px;
-      background: #e3dfd4;
-    }
-
-    .tick {
-      position: absolute;
-      top: 4px;
-      width: 1px;
-      height: 14px;
-      background: #5e5b54;
-    }
-
-    .tick.open {
-      top: 2px;
-      height: 18px;
-      background: #1e2a36;
-    }
-
-    .mark {
-      position: absolute;
-      top: 5px;
-      width: 10px;
-      height: 10px;
-      margin-left: -5px;
-      border: 2px solid #f6f4ee;
-      border-radius: 50%;
-      background: #1a1c19;
-    }
-
-    .mark.up { background: var(--up); }
-    .mark.down { background: var(--down); }
-
-    .scale {
-      position: relative;
-      height: 16px;
-    }
-
-    .scale span {
-      position: absolute;
-      transform: translateX(-50%);
-      color: var(--muted);
-      font-family: Consolas, "Courier New", monospace;
-      font-size: 11px;
-      white-space: nowrap;
-    }
-
     .source-toggle {
       display: inline-flex;
       margin-left: 12px;
@@ -402,6 +321,10 @@
     function formatPercent(value) {
       const sign = value > 0 ? "+" : "";
       return sign + Number(value).toFixed(2) + "%";
+    }
+
+    function formatDeviation(value) {
+      return (Number(value) * 100).toFixed(2) + "%";
     }
 
     function formatAsOf(iso) {
@@ -533,62 +456,15 @@
       return next;
     }
 
-    function place(value, low, high) {
-      return ((value - low) / (high - low)) * 100;
-    }
-
-    function rangeLine(item, openPrice, lastPrice) {
-      const deviation = Number(item.standardDeviation);
-      if (!isFinite(openPrice) || !isFinite(lastPrice) || !isFinite(deviation) || deviation <= 0) {
-        return (
-          '<div class="range-line"><div class="range-head"><span>' + esc(item.period) +
-          "</span><span>standard deviation " + formatPrice(item.standardDeviation) + "</span></div></div>"
-        );
-      }
-      const below = openPrice - deviation;
-      const above = openPrice + deviation;
-      let low = Math.min(below, lastPrice);
-      let high = Math.max(above, lastPrice);
-      const pad = Math.max((high - low) * 0.12, deviation * 0.2);
-      low -= pad;
-      high += pad;
-      const belowPct = place(below, low, high);
-      const abovePct = place(above, low, high);
-      const openPct = place(openPrice, low, high);
-      const lastPct = place(lastPrice, low, high);
-      const side = lastPrice > openPrice ? "up" : lastPrice < openPrice ? "down" : "";
-      return (
-        '<div class="range-line">' +
-          '<div class="range-head"><span>' + esc(item.period) + "</span><span>σ " +
-          formatPrice(deviation) + "</span></div>" +
-          '<div class="track">' +
-            '<div class="track-bar"></div>' +
-            '<div class="band" style="left:' + belowPct + "%;width:" + (abovePct - belowPct) + '%"></div>' +
-            '<i class="tick" style="left:' + belowPct + '%"></i>' +
-            '<i class="tick open" style="left:' + openPct + '%"></i>' +
-            '<i class="tick" style="left:' + abovePct + '%"></i>' +
-            '<i class="mark ' + side + '" style="left:' + lastPct + '%"></i>' +
-          "</div>" +
-          '<div class="scale">' +
-            '<span style="left:' + belowPct + '%">' + formatPrice(below) + "</span>" +
-            '<span style="left:' + openPct + '%">open ' + formatPrice(openPrice) + "</span>" +
-            '<span style="left:' + abovePct + '%">' + formatPrice(above) + "</span>" +
-          "</div>" +
-        "</div>"
-      );
-    }
-
     function formatRangePanel(data) {
-      const openPrice = Number(data.open);
-      const lastPrice = Number(data.last);
       const lines = (data.periods || []).map(function (item) {
         if (item.error) {
-          return (
-            '<div class="range-line"><div class="range-head"><span>' + esc(item.period) +
-            "</span><span>" + esc(item.error) + "</span></div></div>"
-          );
+          return "<span>" + esc(item.period) + " " + esc(item.error) + "</span>";
         }
-        return rangeLine(item, openPrice, lastPrice);
+        return (
+          "<span>" + esc(item.period) +
+          " standard deviation <b>" + formatDeviation(item.standardDeviation) + "</b></span>"
+        );
       }).join("");
       return '<div class="fold-stats">' + lines + "</div>";
     }
@@ -671,7 +547,7 @@
       const cached = rangeCache[rangeKey(symbol)];
       detail.innerHTML =
         '<td colspan="5"><div class="fold"><div class="fold-inner"><div class="fold-body">' +
-        (cached ? "" : "Reading the 7-day, 1-month, and 3-month ranges…") +
+        (cached ? "" : "Reading the 7-day, 1-month, and 3-month standard deviations…") +
         "</div></div></div></td>";
       row.classList.add("open");
       row.after(detail);
@@ -741,7 +617,7 @@
         rows.length + " " + noun + " · names " + label + ".";
       document.getElementById("meta").textContent =
         feed + " · as of " + formatAsOf(data.asOf) + " · " +
-        data.quoted + " of " + data.universe + " quoted. Click a ticker for the range.";
+        data.quoted + " of " + data.universe + " quoted. Click a ticker for the standard deviation.";
       if (openSymbol) {
         const row = tickerRow(openSymbol);
         if (row) openDetail(row, openSymbol);
